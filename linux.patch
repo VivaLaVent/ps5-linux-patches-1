@@ -1493,10 +1493,10 @@ index 6c7a39b7f8d2..2c1267ef7df4 100644
  obj-$(CONFIG_X86_POWERNOW_K8)		+= powernow-k8.o
 diff --git a/drivers/cpufreq/ps5-cpufreq.c b/drivers/cpufreq/ps5-cpufreq.c
 new file mode 100644
-index 000000000000..cfe6d09fd0f3
+index 000000000000..c336d949a3d6
 --- /dev/null
 +++ b/drivers/cpufreq/ps5-cpufreq.c
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,117 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +
 +#include <linux/bitfield.h>
@@ -1516,11 +1516,8 @@ index 000000000000..cfe6d09fd0f3
 +
 +#define PS5_GPU_MHZ_FLOOR		2000
 +#define PS5_GPU_MHZ_CEIL		2230
-+#define PS5PRO_GPU_MHZ_CEIL		2350
 +
 +#define PS5_TRANSITION_LATENCY_NS	50000
-+
-+static u32 ps5_gpu_mhz_ceil = PS5_GPU_MHZ_CEIL;
 +
 +static struct cpufreq_frequency_table ps5_freq_table[] = {
 +	{ .flags = CPUFREQ_BOOST_FREQ, .driver_data = 0xff, .frequency = 3500000 },
@@ -1551,7 +1548,7 @@ index 000000000000..cfe6d09fd0f3
 +
 +	if (pstate == 0xff)
 +		return mp1_boost_enter(PS5_CPU_MHZ_FLOOR, PS5_CPU_MHZ_CEIL,
-+					PS5_GPU_MHZ_FLOOR, ps5_gpu_mhz_ceil);
++					PS5_GPU_MHZ_FLOOR, PS5_GPU_MHZ_CEIL);
 +
 +	return ps5_cpufreq_set_pstate(pstate);
 +}
@@ -1595,8 +1592,12 @@ index 000000000000..cfe6d09fd0f3
 +	struct pci_dev *pdev = NULL;
 +
 +	while ((pdev = pci_get_class(PCI_CLASS_DISPLAY_VGA << 8, pdev))) {
-+		if (pdev->vendor == PCI_VENDOR_ID_ATI && ps5_is_viola(pdev->device))
-+			ps5_gpu_mhz_ceil = PS5PRO_GPU_MHZ_CEIL;
++		/* The Pro's MP1 never answers P-state requests: the mailbox stays busy, GPU clocks included */
++		if (pdev->vendor == PCI_VENDOR_ID_ATI && ps5_is_viola(pdev->device)) {
++			pci_dev_put(pdev);
++			pr_info("PS5 Pro: CPU clock control left to the firmware\n");
++			return -ENODEV;
++		}
 +	}
 +
 +	pr_info("Strawberry was here\n");
