@@ -3814,7 +3814,7 @@ index 881c8d1c3cc0..3543974d14a5 100644
  	uint8_t underscan_vborder;
  	uint8_t underscan_hborder;
 diff --git a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_connector.c b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_connector.c
-index 45a69bf43971..ade604fd818a 100644
+index 45a69bf43971..3af9e0cb6a99 100644
 --- a/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_connector.c
 +++ b/drivers/gpu/drm/amd/display/amdgpu_dm/amdgpu_dm_connector.c
 @@ -41,6 +41,10 @@
@@ -3851,7 +3851,7 @@ index 45a69bf43971..ade604fd818a 100644
  	return color_space;
  }
  EXPORT_IF_KUNIT(amdgpu_dm_get_output_color_space);
-@@ -871,6 +891,132 @@ STATIC_IFN_KUNIT bool adjust_colour_depth_from_display_info(
+@@ -871,6 +891,135 @@ STATIC_IFN_KUNIT bool adjust_colour_depth_from_display_info(
  }
  EXPORT_IF_KUNIT(adjust_colour_depth_from_display_info);
  
@@ -3937,7 +3937,9 @@ index 45a69bf43971..ade604fd818a 100644
 +	if (state->hdr_output_metadata) {
 +		if (drm_hdmi_infoframe_set_hdr_metadata(&frame, state))
 +			return PS5_HDMI_PLAN_DEPTH;
-+		metadata = &frame;
++		/* SDR metadata (gamescope sends it with every commit) is no HDR request */
++		if (frame.eotf != HDMI_EOTF_TRADITIONAL_GAMMA_SDR)
++			metadata = &frame;
 +	}
 +	bt2020 = state->colorspace == DRM_MODE_COLORIMETRY_BT2020_RGB ||
 +		 state->colorspace == DRM_MODE_COLORIMETRY_BT2020_YCC;
@@ -3972,8 +3974,9 @@ index 45a69bf43971..ade604fd818a 100644
 +	if (status != PS5_HDMI_PLAN_OK) {
 +		drm_dbg_kms(state->connector->dev, "PS5 HDMI plan rejected: %s\n",
 +			    ps5_hdmi_plan_reason(status));
-+		/* Preserve the established TMDS backend when FRL is unavailable. */
-+		return !isHdmiFrlTiming(mode) && status == PS5_HDMI_PLAN_BACKEND;
++		/* A TMDS timing (4K60) keeps the TMDS backend when FRL is off or can't carry it (HDR at 8 bpc) */
++		return !isHdmiFrlTiming(mode) &&
++		       (status == PS5_HDMI_PLAN_BACKEND || status == PS5_HDMI_PLAN_DEPTH);
 +	}
 +	dm_state->ps5_hdmi_plan = plan;
 +	dm_state->ps5_hdmi_plan_valid = true;
@@ -3984,7 +3987,7 @@ index 45a69bf43971..ade604fd818a 100644
  STATIC_IFN_KUNIT void fill_stream_properties_from_drm_display_mode(
  	struct dc_stream_state *stream,
  	const struct drm_display_mode *mode_in,
-@@ -981,6 +1127,24 @@ STATIC_IFN_KUNIT void fill_stream_properties_from_drm_display_mode(
+@@ -981,6 +1130,24 @@ STATIC_IFN_KUNIT void fill_stream_properties_from_drm_display_mode(
  	if (is_hdmi_ep)
  		adjust_colour_depth_from_display_info(timing_out, info);
  
@@ -4009,7 +4012,7 @@ index 45a69bf43971..ade604fd818a 100644
  	stream->output_color_space = amdgpu_dm_get_output_color_space(timing_out, connector_state);
  	stream->content_type = get_output_content_type(connector_state);
  }
-@@ -1921,6 +2085,9 @@ STATIC_IFN_KUNIT void amdgpu_dm_connector_destroy(struct drm_connector *connecto
+@@ -1921,6 +2088,9 @@ STATIC_IFN_KUNIT void amdgpu_dm_connector_destroy(struct drm_connector *connecto
  	struct amdgpu_device *adev = drm_to_adev(connector->dev);
  	struct amdgpu_display_manager *dm = &adev->dm;
  
@@ -4019,7 +4022,7 @@ index 45a69bf43971..ade604fd818a 100644
  	/*
  	 * Call only if mst_mgr was initialized before since it's not done
  	 * for all connector types.
-@@ -1968,8 +2135,12 @@ void amdgpu_dm_connector_funcs_reset(struct drm_connector *connector)
+@@ -1968,8 +2138,12 @@ void amdgpu_dm_connector_funcs_reset(struct drm_connector *connector)
  	if (!state)
  		return;
  
@@ -4033,7 +4036,7 @@ index 45a69bf43971..ade604fd818a 100644
  
  	kfree(old_state);
  
-@@ -2005,6 +2176,11 @@ amdgpu_dm_connector_atomic_duplicate_state(struct drm_connector *connector)
+@@ -2005,6 +2179,11 @@ amdgpu_dm_connector_atomic_duplicate_state(struct drm_connector *connector)
  		return NULL;
  
  	__drm_atomic_helper_connector_duplicate_state(connector, &new_state->base);
@@ -4045,7 +4048,7 @@ index 45a69bf43971..ade604fd818a 100644
  
  	new_state->freesync_capable = state->freesync_capable;
  	new_state->abm_level = state->abm_level;
-@@ -2018,6 +2194,15 @@ amdgpu_dm_connector_atomic_duplicate_state(struct drm_connector *connector)
+@@ -2018,6 +2197,15 @@ amdgpu_dm_connector_atomic_duplicate_state(struct drm_connector *connector)
  }
  EXPORT_IF_KUNIT(amdgpu_dm_connector_atomic_duplicate_state);
  
@@ -4061,7 +4064,7 @@ index 45a69bf43971..ade604fd818a 100644
  STATIC_IFN_KUNIT int
  amdgpu_dm_connector_late_register(struct drm_connector *connector)
  {
-@@ -2094,7 +2279,7 @@ static const struct drm_connector_funcs amdgpu_dm_connector_funcs = {
+@@ -2094,7 +2282,7 @@ static const struct drm_connector_funcs amdgpu_dm_connector_funcs = {
  	.fill_modes = drm_helper_probe_single_connector_modes,
  	.destroy = amdgpu_dm_connector_destroy,
  	.atomic_duplicate_state = amdgpu_dm_connector_atomic_duplicate_state,
@@ -4070,7 +4073,7 @@ index 45a69bf43971..ade604fd818a 100644
  	.atomic_set_property = amdgpu_dm_connector_atomic_set_property,
  	.atomic_get_property = amdgpu_dm_connector_atomic_get_property,
  	.late_register = amdgpu_dm_connector_late_register,
-@@ -2448,6 +2633,25 @@ amdgpu_dm_create_validate_stream_for_sink(struct drm_connector *connector,
+@@ -2448,6 +2636,25 @@ amdgpu_dm_create_validate_stream_for_sink(struct drm_connector *connector,
  				return NULL;
  			}
  
@@ -4096,7 +4099,7 @@ index 45a69bf43971..ade604fd818a 100644
  			dc_result = dc_validate_stream(adev->dm.dc, stream);
  
  			if (dc_result == DC_OK &&
-@@ -2497,6 +2701,13 @@ enum drm_mode_status amdgpu_dm_connector_mode_valid(struct drm_connector *connec
+@@ -2497,6 +2704,13 @@ enum drm_mode_status amdgpu_dm_connector_mode_valid(struct drm_connector *connec
  	 */
  	struct amdgpu_dm_connector *aconnector = to_amdgpu_dm_connector(connector);
  
@@ -4110,7 +4113,7 @@ index 45a69bf43971..ade604fd818a 100644
  	if ((mode->flags & DRM_MODE_FLAG_INTERLACE) ||
  			(mode->flags & DRM_MODE_FLAG_DBLSCAN))
  		return result;
-@@ -2626,6 +2837,30 @@ amdgpu_dm_connector_atomic_check(struct drm_connector *conn,
+@@ -2626,6 +2840,30 @@ amdgpu_dm_connector_atomic_check(struct drm_connector *conn,
  	if (!crtc)
  		return 0;
  
@@ -4141,7 +4144,7 @@ index 45a69bf43971..ade604fd818a 100644
  	if (new_con_state->privacy_screen_sw_state != old_con_state->privacy_screen_sw_state) {
  		new_crtc_state = drm_atomic_get_crtc_state(state, crtc);
  		if (IS_ERR(new_crtc_state))
-@@ -2647,7 +2882,11 @@ amdgpu_dm_connector_atomic_check(struct drm_connector *conn,
+@@ -2647,7 +2885,11 @@ amdgpu_dm_connector_atomic_check(struct drm_connector *conn,
  		if (IS_ERR(new_crtc_state))
  			return PTR_ERR(new_crtc_state);
  
@@ -4154,7 +4157,7 @@ index 45a69bf43971..ade604fd818a 100644
  	}
  
  	if (!drm_connector_atomic_hdr_metadata_equal(old_con_state, new_con_state)) {
-@@ -2677,6 +2916,17 @@ amdgpu_dm_connector_atomic_check(struct drm_connector *conn,
+@@ -2677,6 +2919,17 @@ amdgpu_dm_connector_atomic_check(struct drm_connector *conn,
  			!new_con_state->hdr_output_metadata;
  	}
  
@@ -4172,7 +4175,7 @@ index 45a69bf43971..ade604fd818a 100644
  	return 0;
  }
  
-@@ -3109,6 +3359,50 @@ STATIC_IFN_KUNIT void amdgpu_dm_connector_add_freesync_modes(struct drm_connecto
+@@ -3109,6 +3362,50 @@ STATIC_IFN_KUNIT void amdgpu_dm_connector_add_freesync_modes(struct drm_connecto
  }
  EXPORT_IF_KUNIT(amdgpu_dm_connector_add_freesync_modes);
  
@@ -4223,7 +4226,7 @@ index 45a69bf43971..ade604fd818a 100644
  static int amdgpu_dm_connector_get_modes(struct drm_connector *connector)
  {
  	struct amdgpu_dm_connector *amdgpu_dm_connector =
-@@ -3143,6 +3437,10 @@ static int amdgpu_dm_connector_get_modes(struct drm_connector *connector)
+@@ -3143,6 +3440,10 @@ static int amdgpu_dm_connector_get_modes(struct drm_connector *connector)
  		if (encoder)
  			amdgpu_dm_connector_add_common_modes(encoder, connector);
  		amdgpu_dm_connector_add_freesync_modes(connector, drm_edid);
@@ -4234,7 +4237,7 @@ index 45a69bf43971..ade604fd818a 100644
  	}
  	amdgpu_dm_fbc_init(connector);
  
-@@ -3299,6 +3597,12 @@ void amdgpu_dm_connector_init_helper(struct amdgpu_display_manager *dm,
+@@ -3299,6 +3600,12 @@ void amdgpu_dm_connector_init_helper(struct amdgpu_display_manager *dm,
  		/* Content Type is currently only implemented for HDMI. */
  		drm_connector_attach_content_type_property(&aconnector->base);
  	}
@@ -4247,7 +4250,7 @@ index 45a69bf43971..ade604fd818a 100644
  
  	if (connector_type == DRM_MODE_CONNECTOR_HDMIA) {
  		if (!drm_mode_create_hdmi_colorspace_property(&aconnector->base, supported_colorspaces))
-@@ -3618,6 +3922,39 @@ void dm_restore_drm_connector_state(struct drm_device *dev,
+@@ -3618,6 +3925,39 @@ void dm_restore_drm_connector_state(struct drm_device *dev,
  		dm_force_atomic_commit(&aconnector->base);
  }
  
@@ -11889,10 +11892,10 @@ index 000000000000..a2b12d65a71f
 +}
 diff --git a/drivers/ps5/hdmi.c b/drivers/ps5/hdmi.c
 new file mode 100755
-index 000000000000..4ade01ba653e
+index 000000000000..52fbf28026b8
 --- /dev/null
 +++ b/drivers/ps5/hdmi.c
-@@ -0,0 +1,2419 @@
+@@ -0,0 +1,2422 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +
 +#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -13967,6 +13970,9 @@ index 000000000000..4ade01ba653e
 +		return PS5_HDMI_PLAN_BACKEND;
 +	if (drm_mode_is_420_only(info, mode) && !yuv420)
 +		return PS5_HDMI_PLAN_FORMAT;
++	/* SDR metadata (gamescope sends it with every commit) is no HDR request, not a conflict */
++	if (metadata && metadata->eotf == HDMI_EOTF_TRADITIONAL_GAMMA_SDR)
++		metadata = NULL;
 +	if (metadata && metadata->eotf != HDMI_EOTF_SMPTE_ST2084)
 +		return PS5_HDMI_PLAN_DEPTH;
 +	if (metadata && !(info->hdr_sink_metadata.hdmi_type1.eotf & BIT(metadata->eotf)))
