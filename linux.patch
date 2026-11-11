@@ -1493,10 +1493,10 @@ index 6c7a39b7f8d2..2c1267ef7df4 100644
  obj-$(CONFIG_X86_POWERNOW_K8)		+= powernow-k8.o
 diff --git a/drivers/cpufreq/ps5-cpufreq.c b/drivers/cpufreq/ps5-cpufreq.c
 new file mode 100644
-index 000000000000..cfe6d09fd0f3
+index 000000000000..c442e2a7b3a4
 --- /dev/null
 +++ b/drivers/cpufreq/ps5-cpufreq.c
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,121 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +
 +#include <linux/bitfield.h>
@@ -1574,6 +1574,11 @@ index 000000000000..cfe6d09fd0f3
 +	cpumask_copy(policy->cpus, cpu_present_mask);
 +	policy->freq_table = ps5_freq_table;
 +	policy->cpuinfo.transition_latency = PS5_TRANSITION_LATENCY_NS;
++	/*
++	 * Every change is a mailbox request to MP1. From the latency alone schedutil would re-evaluate every
++	 * 75 us: hundreds of requests a second at idle, its kthread the busiest task, the cores never at the floor.
++	 */
++	policy->transition_delay_us = 10 * USEC_PER_MSEC;
 +	policy->boost_supported = true;
 +	policy->cur = PS5_CPU_MHZ_FLOOR * 1000;
 +
